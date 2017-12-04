@@ -6,5 +6,8 @@
         <attr name="cardTextSize" format="dimension"/>
         <attr name="cardCoverDrawable" format="reference" />
         <attr name="cardPathWidth" format="dimension"/>
+        <attr name="cardForeGroundText" format="string"/>
+        <attr name="cardForeGroundTextColor" format="color"/>
+        <attr name="cardForeGroundTextSize" format="dimension"/>
     </declare-styleable>
 </resources>

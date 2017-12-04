@@ -13,6 +13,8 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -24,7 +26,7 @@ import com.example.zhaimeng.imooc_guaguaka.R;
  * Created by Administrator on 2017/12/1.
  */
 
-public class GuaGuaCardView extends View {
+public class GuaGuaCardView extends View{
 
     private int CLICK_ACTION_THRESHOLD = 200;
     private Paint mOutterPaint;
@@ -34,15 +36,31 @@ public class GuaGuaCardView extends View {
     private int mLastX;
     private int mLastY;
     private Bitmap mOutterBitmap;
-    
+
+    private static final int MIN_PERCENT = 5;//刮开5%就不可改变
+
+
     private String mText;
     private int mTextSize;
     private int mTextColor;
+    private String mForeText;
+    private int mForeTextSize;
+    private int mForeTextColor;
+
     private int pathWidth;
     private Drawable coverDrawable;
     private Bitmap backGround;
     private Paint mBackPaint;//绘制“谢谢参与”的画笔
     private Rect mTextBound;//“谢谢参与”的矩形范围
+    private Paint mForePaint;//绘制画笔
+    private Rect mForeTextBound;//
+
+    private boolean enable;
+    private Handler handler;
+
+    public void setEnable(boolean enable) {
+        this.enable = enable;
+    }
 
     private volatile boolean mComplete = false;//判断擦除的比例是否达到60%
 
@@ -61,8 +79,14 @@ public class GuaGuaCardView extends View {
         mText = a.getString(R.styleable.GuaGuaCard_cardText);
         mTextColor = a.getColor(R.styleable.GuaGuaCard_cardTextColor, 0x000000);
         mTextSize = a.getDimensionPixelSize(R.styleable.GuaGuaCard_cardTextSize, 22);
+
+        mForeText = a.getString(R.styleable.GuaGuaCard_cardForeGroundText);
+        mForeTextColor = a.getColor(R.styleable.GuaGuaCard_cardForeGroundTextColor, 0x000000);
+        mForeTextSize = a.getDimensionPixelSize(R.styleable.GuaGuaCard_cardForeGroundTextSize, 22);
+
         coverDrawable = a.getDrawable(R.styleable.GuaGuaCard_cardCoverDrawable);
         pathWidth = a.getDimensionPixelSize(R.styleable.GuaGuaCard_cardPathWidth, 30);
+        handler = new Handler(Looper.getMainLooper());
         a.recycle();
         init();
     }
@@ -72,6 +96,8 @@ public class GuaGuaCardView extends View {
         mPath = new Path();
         mTextBound = new Rect();
         mBackPaint = new Paint();
+        mForePaint = new Paint();
+        mForeTextBound = new Rect();
         mOutterBitmap = drawableToBitmap(coverDrawable);
     }
 
@@ -84,8 +110,8 @@ public class GuaGuaCardView extends View {
 
     public void setNoneGuaGua(boolean isComplete) {
         mComplete = isComplete;
-        postInvalidate();
     }
+
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
@@ -94,14 +120,22 @@ public class GuaGuaCardView extends View {
         //初始化bitmap
         mBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         mCanvas = new Canvas(mBitmap);
-        
+
         setupOutPaint();//设置“橡皮擦”画笔的属性
         setupBackPaint();//设置绘制“谢谢参与”的画笔属性
+        setupForePaint();
         //画覆盖层的bitmap，是圆角矩形
         if (mOutterBitmap != null) {
             mCanvas.drawRect(new RectF(0, 0, width, height), mOutterPaint);
-            mCanvas.drawBitmap(mOutterBitmap, null, new Rect(0, 0, width, height), null);    
+            mCanvas.drawBitmap(mOutterBitmap, null, new Rect(0, 0, width, height), null);
+            if (mForeText != null && !mForeText.isEmpty()) {
+                mCanvas.drawText(mForeText, width / 2 - mForeTextBound.width() / 2, height / 2 + mForeTextBound.height() / 2, mForePaint);
+            }
         }
+    }
+
+    public void setForeText(String text) {
+        this.mForeText = text;
     }
 
     /**
@@ -113,10 +147,21 @@ public class GuaGuaCardView extends View {
             mBackPaint.setStyle(Paint.Style.FILL);
             mBackPaint.setTextSize(mTextSize);
             //获得画笔绘制文本的宽和高（矩形范围）
-            mBackPaint.getTextBounds(mText, 0, mText.length(), mTextBound);    
+            mBackPaint.getTextBounds(mText, 0, mText.length(), mTextBound);
         }
     }
-    
+
+    private void setupForePaint() {
+        if (mForeText != null) {
+            mForePaint.setColor(mForeTextColor);
+            mForePaint.setStyle(Paint.Style.FILL);
+            mForePaint.setTextSize(mForeTextSize);
+            //获得画笔绘制文本的宽和高（矩形范围）
+            mForePaint.getTextBounds(mForeText, 0, mForeText.length(), mForeTextBound);
+        }
+    }
+
+
     /**
      * 设置 橡皮擦 画笔的属性
      */
@@ -130,35 +175,48 @@ public class GuaGuaCardView extends View {
         mOutterPaint.setStrokeWidth(pathWidth);
     }
 
+    boolean hasStarted = false;
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         int action = event.getAction();
         int x = (int) event.getX();
         int y = (int) event.getY();
         if (!mComplete) {
-            getParent().requestDisallowInterceptTouchEvent(true);
-            //绘制path
-            switch (action) {
-                case MotionEvent.ACTION_DOWN:
-                    mLastX = x;
-                    mLastY = y;
-                    mPath.moveTo(mLastX, mLastY);
-                    break;
-                case MotionEvent.ACTION_UP:
-                    new Thread(mRunnable).start();
-                    break;
-                case MotionEvent.ACTION_MOVE:
-                    int dx = Math.abs(x - mLastX);//用户滑动的距离
-                    int dy = Math.abs(y - mLastY);
-                    if (dx > 3 || dy > 3) {
-                        mPath.lineTo(x, y);
-                    }
-                    mLastX = x;
-                    mLastY = y;
-                    break;
+            if (enable) {
+                getParent().requestDisallowInterceptTouchEvent(true);
+                //绘制path
+                switch (action) {
+                    case MotionEvent.ACTION_DOWN:
+                        mLastX = x;
+                        mLastY = y;
+                        mPath.moveTo(mLastX, mLastY);
+                        break;
+                    case MotionEvent.ACTION_UP:
+                        new Thread(mRunnable).start();
+                        break;
+                    case MotionEvent.ACTION_MOVE:
+                        int dx = Math.abs(x - mLastX);//用户滑动的距离
+                        int dy = Math.abs(y - mLastY);
+                        if (dx > 3 || dy > 3) {
+                            mPath.lineTo(x, y);
+                        }
+                        mLastX = x;
+                        mLastY = y;
+                        break;
+                }
+                invalidate();//执行此方法会调用onDraw方法绘制
+                return true;
+            }else {
+                getParent().requestDisallowInterceptTouchEvent(false);
+                switch (action) {
+                    case MotionEvent.ACTION_DOWN:
+                        if (mListener != null) {
+                            mListener.onCancel();
+                        }
+                        break;
+                }
+                return true;
             }
-            invalidate();//执行此方法会调用onDraw方法绘制
-            return true;
         }else {
             getParent().requestDisallowInterceptTouchEvent(false);
             switch (action) {
@@ -207,6 +265,18 @@ public class GuaGuaCardView extends View {
                     mComplete = true;
                     postInvalidate();
                 }
+
+                if (percent > MIN_PERCENT && !hasStarted) {
+                    hasStarted = true;
+                    if (mListener != null) {
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                mListener.onStart();
+                            }
+                        });
+                    }
+                }
             }
         }
     };
@@ -234,6 +304,10 @@ public class GuaGuaCardView extends View {
 
     public interface OnGuaGuaKaCompleteListener {
         void onComplete();
+
+        void onCancel();
+
+        void onStart();
     }
 
     private OnGuaGuaKaCompleteListener mListener;
@@ -241,8 +315,6 @@ public class GuaGuaCardView extends View {
     public void setOnGuaGuaKaCompleteListener(OnGuaGuaKaCompleteListener mListener) {
         this.mListener = mListener;
     }
-    
-    
 
     private boolean isAClick(float startX, float endX, float startY, float endY) {
         float differenceX = Math.abs(startX - endX);
