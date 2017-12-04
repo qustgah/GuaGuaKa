@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="GuaGuaCard">
+        <attr name="cardText" format="string"/>
+        <attr name="cardTextColor" format="color"/>
+        <attr name="cardTextSize" format="dimension"/>
+        <attr name="cardCoverDrawable" format="reference" />
+        <attr name="cardPathWidth" format="dimension"/>
+    </declare-styleable>
+</resources>
